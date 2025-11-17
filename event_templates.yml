@@ -1,0 +1,2 @@
+dummy_event: "Attention: {name} has performed {action} at {location} on {timestamp}."
+parcel_arrival: "A parcel for {recipient} has arrived at the {camera} at {timestamp}."

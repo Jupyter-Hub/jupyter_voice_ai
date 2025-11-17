@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  jupyter_assistant:
+    build: .
+    container_name: jupyter_assistant_service
+    env_file: .env
+    volumes:
+      - .:/usr/src/app/
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /home/radxa/.config/pulse:/root/.config/pulse
+      - /dev/snd:/dev/snd  # Mount the host's sound devices for microphone/speaker access
+    ports:
+      - "8000:8000"
+    restart: always
+
+    tty: true
+    networks:
+      - shared_net
+    privileged: true
+
+networks:
+  shared_net:
+    external: true

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Jupyter Demo</title>
+  <style>
+    body {
+      margin: 0; padding: 0;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      background-color: #fafafa;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 30px;
+    }
+    .logo {
+      flex-shrink: 0;
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle at top left, #a18cd1 0%, #fbc2eb 100%);
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    }
+    .content {
+      flex: 1;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .question-box {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      padding: 20px;
+    }
+    .question-box h2 {
+      margin-top: 0; margin-bottom: 10px; font-weight: 600;
+    }
+    .input-row {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;
+    }
+    #userInput {
+      flex: 1;
+      padding: 10px;
+      border-radius: 4px; border: 1px solid #ccc; font-size: 1rem;
+    }
+    button {
+      background: #6C63FF; color: #fff; border: none; border-radius: 4px;
+      padding: 10px 16px; cursor: pointer; font-size: 1rem; transition: background 0.2s ease;
+    }
+    button:hover {
+      background: #574fd1;
+    }
+    .recording-indicator {
+      width: 16px; height: 16px; background: red; border-radius: 50%;
+      display: inline-block; margin-right: 8px; vertical-align: middle;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+    .response-box {
+      background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      padding: 20px; position: relative; overflow: hidden;
+    }
+    .response-box h3 { margin-top: 0; margin-bottom: 10px; font-weight: 600; }
+    #responseBox {
+      margin-top: 10px; min-height: 50px; white-space: pre-wrap;
+    }
+    .media-box {
+      background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      padding: 20px; margin-top: 20px; display: none;
+    }
+    .media-box h3 { margin-top: 0; margin-bottom: 10px; font-weight: 600; }
+    .media-entry {
+      margin-bottom: 10px; padding: 10px; border: 1px solid #eee;
+      border-radius: 4px; background: #f9f9f9;
+    }
+    .thinking { animation: bubble-move 1s infinite; }
+    @keyframes bubble-move {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+      100% { transform: translateY(0); }
+    }
+    #statusMessage {
+      font-size: 0.9rem; color: #555; margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo"></div>
+    <div class="content">
+      <!-- Question Box -->
+      <div class="question-box">
+        <h2>Enter your question</h2>
+        <div class="input-row">
+          <input type="text" id="userInput" placeholder="Hey Jupyter, is there a parcel at the door?" />
+          <button id="sendBtn">Submit</button>
+          <button id="summaryBtn">Get Summary</button>
+        </div>
+        <div id="statusMessage"></div>
+      </div>
+
+      <!-- Response Box -->
+      <div class="response-box" id="responseBoxContainer">
+        <h3>Jupyter says:</h3>
+        <div id="responseBox"></div>
+      </div>
+
+      <!-- Media Box -->
+      <div class="media-box" id="mediaBox">
+        <h3>Media Details</h3>
+        <div id="mediaContent"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const sendBtn = document.getElementById('sendBtn');
+  const summaryBtn = document.getElementById('summaryBtn');
+  const userInput = document.getElementById('userInput');
+  const responseBox = document.getElementById('responseBox');
+  const responseBoxContainer = document.getElementById('responseBoxContainer');
+  const mediaBox = document.getElementById('mediaBox');
+  const mediaContent = document.getElementById('mediaContent');
+  const statusMessage = document.getElementById('statusMessage');
+
+  async function updateMediaContent() {
+    try {
+      const mediaResp = await fetch('/media_paths');
+      const mediaData = await mediaResp.json();
+
+      if (mediaData.error || !mediaData.media_paths || mediaData.media_paths.length === 0) {
+        mediaBox.style.display = "none";
+        return;
+      }
+
+      let mediaHtml = "";
+      
+      // Each element in mediaData.media_paths might be:
+      //  - a RealDictRow-like object: { snapshot_path: "...", video_path: "..." }
+      //  - or an array of RealDictRows: [ { snapshot_path: "...", video_path: "..." } ]
+      mediaData.media_paths.forEach(entry => {
+        if (Array.isArray(entry)) {
+          // entry is an array, so we iterate again
+          entry.forEach(subentry => {
+            // subentry is presumably { snapshot_path, video_path }
+            mediaHtml += formatMedia(subentry);
+          });
+        } else {
+          // entry is presumably { snapshot_path, video_path }
+          mediaHtml += formatMedia(entry);
+        }
+      });
+
+      mediaContent.innerHTML = mediaHtml;
+      mediaBox.style.display = "block";
+    } catch (error) {
+      console.error("Error fetching media:", error);
+      mediaBox.style.display = "none";
+    }
+  }
+
+  // Helper function to format a single media record
+  function formatMedia(record) {
+    // If the record is some custom type, we might need to convert it to a normal object.
+    // But usually record should be a simple object with snapshot_path/video_path keys.
+    const snap = record.snapshot_path ?? 'undefined';
+    const vid  = record.video_path ?? 'undefined';
+    return `
+      <div class="media-entry">
+        <p><strong>Snapshot:</strong> ${snap}</p>
+        <p><strong>Video:</strong> ${vid}</p>
+      </div>`;
+  }
+
+  // --- Text Query Handler ---
+  sendBtn.addEventListener('click', async () => {
+    const text = userInput.value.trim();
+    if (!text) return;
+
+    responseBoxContainer.classList.add("thinking");
+    statusMessage.textContent = "Query sent to LLM, waiting for response...";
+
+    try {
+      const resp = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const data = await resp.json();
+      responseBox.textContent = data.answer || "No response.";
+    } catch (e) {
+      console.error("Error in text query:", e);
+    }
+
+    responseBoxContainer.classList.remove("thinking");
+    statusMessage.textContent = "";
+
+    // Update media
+    updateMediaContent();
+  });
+
+
+  // --- Summary Query Handler ---
+  summaryBtn.addEventListener('click', async () => {
+    statusMessage.textContent = "Fetching summary...";
+    responseBoxContainer.classList.add("thinking");
+
+    try {
+      const resp = await fetch('/summary');
+      const summaryData = await resp.json();
+      responseBox.textContent = summaryData.summary || "No summary.";
+    } catch (e) {
+      console.error("Error fetching summary:", e);
+    }
+
+    statusMessage.textContent = "";
+    responseBoxContainer.classList.remove("thinking");
+    updateMediaContent();
+  });
+const ws = new WebSocket(`ws://${location.host}/ws/wakeword`);
+  ws.onmessage = async ({data}) => {
+    const { wakeword } = JSON.parse(data);
+    if (!wakeword) return;
+    statusMessage.innerHTML = '<span class="recording-indicator"></span> Listening...';
+
+    responseBoxContainer.classList.add("thinking");
+    const recordResp = await fetch('/record_and_ask', { method: 'POST' });
+    const recordData = await recordResp.json();
+
+     if (recordData.skip) {
+       statusMessage.textContent = "";
+       responseBoxContainer.classList.remove("thinking");
+       return;                             // stay in listening loop
+     }
+    responseBox.textContent = recordData.answer || "No response.";
+    responseBoxContainer.classList.remove("thinking");
+    statusMessage.textContent = "";
+    updateMediaContent();
+  };
+</script>
+</body>
+</html>
